@@ -25,18 +25,25 @@ void CpuSaxpy(int n, float alpha, const float* x, float* y) {
 
 // GPU implementation of AXPY operation - one CUDA thread per vector element.
 __global__ void GpuSaxpy(int n, float alpha, const float* x, float* y) {
-  // TODO Calculate the index of the vector element updated by this thread.
+  // TODO OK Calculate the index of the vector element updated by this thread.
   // Assume 1D grid of blocks.
-  int idx = 0;
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
 
-  // TODO Make sure that no threads access memory outside the allocated area.
-
+  // TODO OK Make sure that no threads access memory outside the allocated area.
+  if(idx<n){
+    y[idx] = alpha*x[idx];
+  }
 }
 
 // GPU implementation of AXPY operation - CUDA thread updates multiple vector elements.
 __global__ void GpuSaxpyMulti(int n, float alpha, const float* x, float* y) {
-  // TODO(later) Implement CUDA kernel where threads update more than one vector element.
+  // TODO OK (later) Implement CUDA kernel where threads update more than one vector element.
   // Assume 1D grid of blocks.
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+  int thread_count = gridDim.x * blockDim.x;
+
+  for (; idx < n; idx += thread_count) 
+    y[idx] = x[idx]*alpha;
 
   // TODO(later) Check if it's faster than the original implementation.
 }
@@ -56,13 +63,16 @@ int main(int argc, char** argv) {
 
 // ---------------------- Device memory initialisation ---------------------- //
 
-  // TODO Allocate global memory on the GPU. Each vector should have N float elements.
+  // TODO OK Allocate global memory on the GPU. Each vector should have N float elements.
   float* d_x = 0;
   float* d_y = 0;
-  // cudaMalloc(...)
+  cudaMalloc((void**)&d_x, sizeof(float)*N);
+  cudaMalloc((void**)&d_y, sizeof(float)*N);
 
-  // TODO Copy vectors from the host (CPU) to the device (GPU).
-  // cudaMemcpy(...)
+  // TODO OK Copy vectors from the host (CPU) to the device (GPU).
+  cudaMemcpy(h_x, d_x, N*sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(h_y, d_y, N*sizeof(float), cudaMemcpyHostToDevice);
+
 
 // --------------------- Calculations for CPU implementation ---------------- //
 
@@ -79,18 +89,26 @@ int main(int argc, char** argv) {
 
 // --------------------- Calculations for GPU implementation ---------------- //
 
-  // TODO Calculate the number of required thread blocks (one thread per vector element).
-  const dim3 GRID_DIM;
+  // TODO OK Calculate the number of required thread blocks (one thread per vector element).
+  dim3 GRID_DIM(N/BLOCK_DIM.x,0,0);
 
   timer->reset();
   timer->start();
-  // TODO Insert the correct kernel invocation parameters.
-//  GpuSaxpy<<<...>>>(N, 0.25f, d_x, d_y);
-//  GpuSaxpy<<<...>>>(N, -10.5f, d_x, d_y);
+
+  // TODO OK Insert the correct kernel invocation parameters.
+  GpuSaxpy<<<GRID_DIM,BLOCK_DIM>>>(N, 0.25f, d_x, d_y);
+  GpuSaxpy<<<GRID_DIM,BLOCK_DIM>>>(N, -10.5f, d_x, d_y);
+
+  checkCudaErrors(cudaDeviceSynchronize());
+  timer->stop();
+  std::cout << "GPU time1: " << timer->getTime() << " ms." << std::endl;
+
+  timer->reset();
+  timer->start();
 
   // This should work as well.
-//  GpuSaxpyMulti<<<...>>>(N, 0.25f, d_x, d_y);
-//  GpuSaxpyMulti<<<...>>>(N, -10.5f, d_x, d_y);
+  GpuSaxpyMulti<<<GRID_DIM,BLOCK_DIM>>>(N, 0.25f, d_x, d_y);
+  GpuSaxpyMulti<<<GRID_DIM,BLOCK_DIM>>>(N, -10.5f, d_x, d_y);
 
   // Kernel calls are asynchronous with respect to the host, i.e. control is returned to
   // the CPU immediately. It is possible that the second operation is submitted _before_
@@ -101,10 +119,10 @@ int main(int argc, char** argv) {
   // in order to get meaningful time measurement.
   checkCudaErrors(cudaDeviceSynchronize());
   timer->stop();
-  std::cout << "GPU time: " << timer->getTime() << " ms." << std::endl;
+  std::cout << "GPU time2: " << timer->getTime() << " ms." << std::endl;
 
-  // TODO Download the resulting vector d_y from the device and store it in h_x.
-  // cudaMemcpy(...)
+  // TODO OK Download the resulting vector d_y from the device and store it in h_x.
+  cudaMemcpy(d_y, h_y, N*sizeof(float), cudaMemcpyDeviceToHost);
 
   // cudaMemcpy is synchronous, i.e. it will wait for any computation on the GPU to
   // complete before any data is copied (as if cudaDeviceSynchronize() was called before).
@@ -122,8 +140,10 @@ int main(int argc, char** argv) {
   delete[] h_x;
   delete[] h_y;
 
-  // TODO Don't forget to free host and device memory!
-  // cudaFree(...)
+  // TODO OK Don't forget to free host and device memory!
+  cudaFree(d_x);
+  cudaFree(d_y);
+
 
   return 0;
 }
